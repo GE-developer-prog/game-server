@@ -251,21 +251,23 @@ wss.on('connection', (ws) => {
       }
 
       // Kick: host → specific target (by name)
-      case 'KICK_PLAYER': {
-        if (!info.isHost || !info.roomCode) return;
-        const targetName = msg.payload.target;
-        for (const [targetWs, targetInfo] of sockets) {
-          if (targetInfo.roomCode === info.roomCode && targetInfo.name === targetName) {
-            send(targetWs, { type: 'KICK_PLAYER', payload: { target: targetName } });
-            break;
-          }
-        }
-        // Remove from room
-        const room = rooms.get(info.roomCode);
-        if (room) room.players = room.players.filter(p => p.name !== targetName);
-        broadcast(info.roomCode, { type: 'LOBBY_STATE', payload: { players: lobbyPlayers(info.roomCode), roomCode: info.roomCode } }, ws);
-        break;
-      }
+      
+     case 'KICK_PLAYER': {
+      if (!info.isHost || !info.roomCode) return;
+      const targetName = msg.payload.target;
+      for (const [targetWs, targetInfo] of sockets) {
+    if (targetInfo.roomCode === info.roomCode && targetInfo.name === targetName) {
+      send(targetWs, { type: 'KICK_PLAYER', payload: { target: targetName } });
+      targetInfo.roomCode = null; // ✅ ADD THIS LINE
+      break;
+    }
+  }
+  // Remove from room
+  const room = rooms.get(info.roomCode);
+  if (room) room.players = room.players.filter(p => p.name !== targetName);
+  broadcast(info.roomCode, { type: 'LOBBY_STATE', payload: { players: lobbyPlayers(info.roomCode), roomCode: info.roomCode } }, ws);
+  break;
+}
 
       // Player voluntarily quits → forward to host
       case 'PLAYER_QUIT': {
