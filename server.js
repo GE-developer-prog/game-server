@@ -225,6 +225,13 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      // ADD THIS BLOCK RIGHT HERE ↓
+        case 'VIDEO_DONE': {
+          if (!info.roomCode) return;
+          sendToHost(info.roomCode, { type: 'VIDEO_DONE', payload: { name: info.name } });
+          break;
+        }
+
       case 'CHAT_MSG': {
         if (!info.roomCode) return;
         broadcast(info.roomCode, { type: 'CHAT_MSG', payload: msg.payload }, ws);
