@@ -189,10 +189,52 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      // ── HOST regenerates room code (only allowed before any joiner joins) ──
+      case 'REGEN_CODE': {
+        if (!info.isHost || !info.roomCode) return;
+        const oldRoom = rooms.get(info.roomCode);
+        if (!oldRoom) return;
+
+        // Block regen if any joiner is already present
+        const joiners = oldRoom.players.filter(p => !p.isHost);
+        if (joiners.length > 0) {
+          send(ws, { type: 'ERROR', reason: 'Cannot regenerate code after a player has joined.' });
+          return;
+        }
+
+        // Generate a new unique code
+        let newCode, tries = 0;
+        do { newCode = genCode(); tries++; } while (rooms.has(newCode) && tries < 20);
+        if (rooms.has(newCode)) {
+          send(ws, { type: 'ERROR', reason: 'Could not generate unique room code. Try again.' });
+          return;
+        }
+
+        // Move room to new code, clean up old entry
+        const oldCode = info.roomCode;
+        rooms.set(newCode, oldRoom);
+        rooms.delete(oldCode);
+
+        // Update host socket info
+        info.roomCode = newCode;
+
+        send(ws, { type: 'CODE_REGENERATED', roomCode: newCode });
+        console.log(`[Room] Code regenerated ${oldCode} → ${newCode} by ${info.name}`);
+        break;
+      }
+
       // ── HOST starts the game ────────────────────────────────────────────
       case 'GAME_START': {
         if (!info.isHost || !info.roomCode) return;
         const room = rooms.get(info.roomCode);
+
+        // SPEC: Game cannot start if only host is present
+        const joiners = room ? room.players.filter(p => !p.isHost) : [];
+        if (joiners.length === 0) {
+          send(ws, { type: 'ERROR', reason: 'Cannot start — no players have joined yet.' });
+          return;
+        }
+
         if (room) room.gameStarted = true;
         broadcast(info.roomCode, { type: 'GAME_START', payload: msg.payload }, ws);
         console.log(`[Room] Game started in ${info.roomCode}`);
@@ -352,6 +394,16 @@ function cleanupSocket(ws, wasDisconnect, roomCode) {
       type:    'LOBBY_STATE',
       payload: { players: lobbyPlayers(roomCode), roomCode },
     });
+
+    // SPEC: End rule — if no joiners remain and game is in progress, end game for host
+    const remainingJoiners = room.players.filter(p => !p.isHost);
+    if (remainingJoiners.length === 0 && room.gameStarted) {
+      sendToHost(roomCode, {
+        type:    'GAME_OVER',
+        payload: { reason: 'all_players_left' },
+      });
+      console.log(`[Room] All joiners left ${roomCode} — GAME_OVER sent to host`);
+    }
 
     if (room.players.length === 0) cleanupRoom(roomCode);
   }
